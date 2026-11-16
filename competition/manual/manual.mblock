@@ -1,0 +1,241 @@
+
+# ============================================================
+# MAKEX MOVE - GROUP 2
+# FULL MANUAL ROBOT CONTROL V2.0
+#
+# Hardware:
+# CyberPi + mBot2 Shield
+# Official Makeblock Bluetooth Controller
+#
+# EM1 = Left Drive Motor
+# EM2 = Right Drive Motor
+# M1  = Gripper DC Motor
+# S3  = Lifter Servo
+# S4  = Kicker Servo (OPTIONAL)
+# ============================================================
+
+import cyberpi
+import gamepad
+import mbot2
+import time
+
+
+# ============================================================
+# 1. CONFIGURATION
+# ============================================================
+
+MAX_SPEED = 45
+TURN_SCALE = 0.75
+DEADZONE = 8
+
+GRIPPER_SPEED = 40
+
+# Servo positions - CALIBRATE BEFORE USE
+LIFTER_UP = 150
+LIFTER_DOWN = 40
+
+KICKER_READY = 90
+KICKER_ACTIVE = 150
+
+# Hardware ports
+GRIPPER_PORT = "M1"
+
+LIFTER_PORT = 3
+KICKER_PORT = 4
+
+# Enable only if Kicker is physically a servo
+ENABLE_KICKER_SERVO = False
+
+UPDATE_DELAY = 20
+
+
+# ============================================================
+# 2. INITIALIZATION
+# ============================================================
+
+def initialize():
+
+    # Stop all motors
+    mbot2.drive_speed(0, 0)
+
+    mbot2.motor_stop(GRIPPER_PORT)
+
+    # Initial servo positions
+    mbot2.servo_set(LIFTER_DOWN, LIFTER_PORT)
+
+    if ENABLE_KICKER_SERVO:
+        mbot2.servo_set(KICKER_READY, KICKER_PORT)
+
+    cyberpi.display.clear()
+    cyberpi.display.show_label("MAKEX MOVE", 20, 5, 5)
+    cyberpi.display.show_label("MANUAL CONTROL", 12, 5, 35)
+
+
+# ============================================================
+# 3. MOVEMENT FUNCTIONS
+# ============================================================
+
+def clamp(value, low, high):
+
+    return max(low, min(value, high))
+
+
+def deadzone(value):
+
+    if abs(value) < DEADZONE:
+        return 0
+
+    return value
+
+
+def drive_robot():
+
+    # Read analog joystick
+    forward = gamepad.get_joystick("Ly")
+    turn = gamepad.get_joystick("Rx")
+
+    # Remove joystick noise
+    forward = deadzone(forward)
+    turn = deadzone(turn)
+
+    # Adjust turning sensitivity
+    turn = turn * TURN_SCALE
+
+    # Differential drive
+    left = forward + turn
+    right = turn - forward
+
+    # Normalize
+    maximum = max(abs(left), abs(right))
+
+    if maximum > 100:
+
+        left = left * 100 / maximum
+        right = right * 100 / maximum
+
+    # Scale motor RPM
+    left = int(left * MAX_SPEED / 100)
+    right = int(right * MAX_SPEED / 100)
+
+    left = clamp(left, -MAX_SPEED, MAX_SPEED)
+    right = clamp(right, -MAX_SPEED, MAX_SPEED)
+
+    # Stop if joystick is released
+    if left == 0 and right == 0:
+
+        mbot2.drive_speed(0, 0)
+
+    else:
+
+        mbot2.drive_speed(left, right)
+
+
+# ============================================================
+# 4. GRIPPER CONTROL
+# ============================================================
+
+def control_gripper():
+
+    # L1 = Close Gripper
+    if gamepad.is_key_pressed("L1"):
+
+        mbot2.motor_set(
+            GRIPPER_SPEED,
+            GRIPPER_PORT
+        )
+
+    # R1 = Open Gripper
+    elif gamepad.is_key_pressed("R1"):
+
+        mbot2.motor_set(
+            -GRIPPER_SPEED,
+            GRIPPER_PORT
+        )
+
+    # Release = Stop
+    else:
+
+        mbot2.motor_stop(GRIPPER_PORT)
+
+
+# ============================================================
+# 5. LIFTER CONTROL
+# ============================================================
+
+def control_lifter():
+
+    # A = Lift up
+    if gamepad.is_key_pressed("A"):
+
+        mbot2.servo_set(
+            LIFTER_UP,
+            LIFTER_PORT
+        )
+
+    # B = Lower down
+    elif gamepad.is_key_pressed("B"):
+
+        mbot2.servo_set(
+            LIFTER_DOWN,
+            LIFTER_PORT
+        )
+
+
+# ============================================================
+# 6. KICKER CONTROL
+# ============================================================
+
+def control_kicker():
+
+    if not ENABLE_KICKER_SERVO:
+        return
+
+    # X = Activate Kicker
+    if gamepad.is_key_pressed("X"):
+
+        mbot2.servo_set(
+            KICKER_ACTIVE,
+            KICKER_PORT
+        )
+
+    # Y = Return to ready position
+    elif gamepad.is_key_pressed("Y"):
+
+        mbot2.servo_set(
+            KICKER_READY,
+            KICKER_PORT
+        )
+
+
+# ============================================================
+# 7. MAIN CONTROL LOOP
+# ============================================================
+
+initialize()
+
+try:
+
+    while True:
+
+        # Driving system
+        drive_robot()
+
+        # Gripper system
+        control_gripper()
+
+        # Lifter system
+        control_lifter()
+
+        # Kicker system
+        control_kicker()
+
+        time.sleep_ms(UPDATE_DELAY)
+
+
+except KeyboardInterrupt:
+
+    mbot2.drive_speed(0, 0)
+    mbot2.motor_stop(GRIPPER_PORT)
+
+    raise
+
